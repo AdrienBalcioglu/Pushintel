@@ -1,0 +1,89 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model DeviceToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  platform  Platform
+  tags      String[]
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Segment {
+  id        String     @id @default(cuid())
+  name      String     @unique
+  filters   Json
+  createdAt DateTime   @default(now())
+  campaigns Campaign[]
+}
+
+model Campaign {
+  id          String          @id @default(cuid())
+  title       String
+  body        String
+  data        Json?
+  segmentId   String
+  segment     Segment         @relation(fields: [segmentId], references: [id])
+  status      CampaignStatus
+  scheduledAt DateTime?
+  sentAt      DateTime?
+  createdAt   DateTime        @default(now())
+  deliveries  DeliveryEvent[]
+}
+
+model DeliveryEvent {
+  id          String         @id @default(cuid())
+  campaignId  String
+  campaign    Campaign       @relation(fields: [campaignId], references: [id])
+  deviceToken String
+  platform    Platform
+  status      DeliveryStatus
+  error       String?
+  timestamp   DateTime       @default(now())
+}
+
+model ApiKey {
+  id        String   @id @default(cuid())
+  name      String
+  keyHash   String   @unique
+  role      Role
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  lastUsed  DateTime?
+}
+
+enum Platform {
+  IOS
+  ANDROID
+  WEB
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  DONE
+  FAILED
+}
+
+enum DeliveryStatus {
+  SENT
+  DELIVERED
+  FAILED
+  OPENED
+}
+
+enum Role {
+  ADMIN
+  SENDER
+  VIEWER
+}

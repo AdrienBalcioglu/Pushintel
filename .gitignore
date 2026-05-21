@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+*.env.local
+certs/
+*.p8
+*.pem
+.DS_Store
+coverage/
+prisma/migrations/
