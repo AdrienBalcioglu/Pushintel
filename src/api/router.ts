@@ -6,6 +6,7 @@ import { createRegisterRouter } from './sdk/register.router'
 import { createTokensRouter } from './admin/tokens.router'
 import { createSegmentsRouter } from './admin/segments.router'
 import { createAnalyticsRouter } from './admin/analytics.router'
+import { createDashboardApiRouter } from './admin/dashboard.router'
 
 export function createRouter(container: Container): Router {
   const router = Router()
@@ -29,6 +30,13 @@ export function createRouter(container: Container): Router {
     authMiddleware,
     mcpRateLimiter,
     createSegmentsRouter(container.segmentService),
+  )
+
+  router.use(
+    '/admin/dashboard',
+    authMiddleware,
+    mcpRateLimiter,
+    createDashboardApiRouter(container.prisma),
   )
 
   router.use(

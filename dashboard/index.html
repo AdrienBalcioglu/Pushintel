@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="fr" x-data="app()" x-init="init()">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pushintel — Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+  <style>
+    [x-cloak] { display: none !important; }
+    body { background: #0a0a0a; color: #e5e5e5; font-family: system-ui, sans-serif; }
+    ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-track { background: #111; } ::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+  </style>
+</head>
+<body class="min-h-screen">
+
+<!-- Auth gate -->
+<div x-show="!authed" x-cloak class="flex items-center justify-center min-h-screen">
+  <div class="bg-[#111] border border-[#222] rounded-2xl p-8 w-full max-w-sm">
+    <h1 class="text-xl font-bold text-white mb-1">🔔 Pushintel</h1>
+    <p class="text-xs text-zinc-500 mb-6">Admin Dashboard</p>
+    <label class="block text-xs text-zinc-500 mb-1">API URL</label>
+    <input x-model="apiUrl" class="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:border-indigo-500" />
+    <label class="block text-xs text-zinc-500 mb-1">API Key</label>
+    <input x-model="apiKey" type="password" placeholder="pi_..." class="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-sm mb-4 focus:outline-none focus:border-indigo-500" />
+    <button @click="login()" :disabled="loading" class="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white font-semibold py-2 rounded-lg text-sm transition">
+      <span x-show="!loading">Se connecter</span>
+      <span x-show="loading">Chargement...</span>
+    </button>
+    <p x-show="authError" x-text="authError" class="text-red-400 text-xs mt-3"></p>
+  </div>
+</div>
+
+<!-- Dashboard -->
+<div x-show="authed" x-cloak class="flex h-screen overflow-hidden">
+
+  <!-- Sidebar -->
+  <aside class="w-52 bg-[#0f0f0f] border-r border-[#1a1a1a] flex flex-col p-4 shrink-0">
+    <div class="mb-8">
+      <h1 class="text-sm font-bold text-white">🔔 Pushintel</h1>
+      <p class="text-xs text-zinc-600 mt-0.5">Dashboard</p>
+    </div>
+    <nav class="flex flex-col gap-1 flex-1">
+      <template x-for="item in nav" :key="item.id">
+        <button @click="page = item.id"
+          :class="page === item.id ? 'bg-indigo-600/20 text-indigo-400' : 'text-zinc-500 hover:text-zinc-200 hover:bg-[#1a1a1a]'"
+          class="text-left text-sm px-3 py-2 rounded-lg transition flex items-center gap-2">
+          <span x-text="item.icon"></span>
+          <span x-text="item.label"></span>
+        </button>
+      </template>
+    </nav>
+    <button @click="authed = false; apiKey = ''" class="text-xs text-zinc-600 hover:text-zinc-400 text-left mt-4 px-3">Déconnexion</button>
+  </aside>
+
+  <!-- Main -->
+  <main class="flex-1 overflow-y-auto p-6">
+
+    <!-- Overview -->
+    <div x-show="page === 'overview'">
+      <h2 class="text-lg font-semibold text-white mb-5">Vue d'ensemble</h2>
+
+      <!-- KPI cards -->
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <template x-for="kpi in kpis" :key="kpi.label">
+          <div class="bg-[#111] border border-[#1e1e1e] rounded-xl p-4">
+            <p class="text-xs text-zinc-500 mb-1" x-text="kpi.label"></p>
+            <p class="text-2xl font-bold text-white" x-text="kpi.value"></p>
+            <p class="text-xs mt-1" :class="kpi.sub_color || 'text-zinc-600'" x-text="kpi.sub"></p>
+          </div>
+        </template>
+      </div>
+
+      <!-- Recent campaigns -->
+      <div class="bg-[#111] border border-[#1e1e1e] rounded-xl p-5">
+        <h3 class="text-sm font-semibold text-zinc-300 mb-4">Campagnes récentes</h3>
+        <div x-show="overview.recentCampaigns?.length === 0" class="text-zinc-600 text-sm">Aucune campagne.</div>
+        <table class="w-full text-sm" x-show="overview.recentCampaigns?.length > 0">
+          <thead>
+            <tr class="text-xs text-zinc-500 border-b border-[#1e1e1e]">
+              <th class="text-left pb-2 font-medium">Titre</th>
+              <th class="text-left pb-2 font-medium">Statut</th>
+              <th class="text-right pb-2 font-medium">Livraisons</th>
+              <th class="text-right pb-2 font-medium">Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="c in overview.recentCampaigns" :key="c.id">
+              <tr class="border-b border-[#161616] hover:bg-[#161616] cursor-pointer" @click="openCampaign(c.id)">
+                <td class="py-2.5 text-zinc-200" x-text="c.title"></td>
+                <td class="py-2.5"><span :class="statusClass(c.status)" class="text-xs px-2 py-0.5 rounded-full font-medium" x-text="c.status"></span></td>
+                <td class="py-2.5 text-right text-zinc-400" x-text="c.deliveries"></td>
+                <td class="py-2.5 text-right text-zinc-500 text-xs" x-text="fmtDate(c.createdAt)"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Campaigns -->
+    <div x-show="page === 'campaigns'">
+      <h2 class="text-lg font-semibold text-white mb-5">Campagnes</h2>
+      <div class="bg-[#111] border border-[#1e1e1e] rounded-xl overflow-hidden">
+        <div x-show="campaigns.length === 0" class="p-6 text-zinc-600 text-sm">Aucune campagne.</div>
+        <table class="w-full text-sm" x-show="campaigns.length > 0">
+          <thead class="bg-[#161616]">
+            <tr class="text-xs text-zinc-500">
+              <th class="text-left px-4 py-3 font-medium">Titre</th>
+              <th class="text-left px-4 py-3 font-medium">Segment</th>
+              <th class="text-left px-4 py-3 font-medium">Statut</th>
+              <th class="text-right px-4 py-3 font-medium">Livraisons</th>
+              <th class="text-right px-4 py-3 font-medium">Créé le</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="c in campaigns" :key="c.id">
+              <tr class="border-t border-[#161616] hover:bg-[#161616] cursor-pointer" @click="openCampaign(c.id)">
+                <td class="px-4 py-3 text-zinc-200" x-text="c.title"></td>
+                <td class="px-4 py-3 text-zinc-500 text-xs" x-text="c.segment?.name ?? '—'"></td>
+                <td class="px-4 py-3"><span :class="statusClass(c.status)" class="text-xs px-2 py-0.5 rounded-full font-medium" x-text="c.status"></span></td>
+                <td class="px-4 py-3 text-right text-zinc-400" x-text="c._count?.deliveries ?? 0"></td>
+                <td class="px-4 py-3 text-right text-zinc-500 text-xs" x-text="fmtDate(c.createdAt)"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Segments -->
+    <div x-show="page === 'segments'">
+      <h2 class="text-lg font-semibold text-white mb-5">Segments</h2>
+      <div class="bg-[#111] border border-[#1e1e1e] rounded-xl overflow-hidden">
+        <div x-show="segments.length === 0" class="p-6 text-zinc-600 text-sm">Aucun segment.</div>
+        <table class="w-full text-sm" x-show="segments.length > 0">
+          <thead class="bg-[#161616]">
+            <tr class="text-xs text-zinc-500">
+              <th class="text-left px-4 py-3 font-medium">Nom</th>
+              <th class="text-left px-4 py-3 font-medium">Filtres</th>
+              <th class="text-right px-4 py-3 font-medium">Tokens actifs</th>
+              <th class="text-right px-4 py-3 font-medium">Créé le</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="s in segments" :key="s.id">
+              <tr class="border-t border-[#161616] hover:bg-[#161616]">
+                <td class="px-4 py-3 text-zinc-200 font-mono text-xs" x-text="s.name"></td>
+                <td class="px-4 py-3 text-zinc-500 text-xs font-mono" x-text="JSON.stringify(s.filters)"></td>
+                <td class="px-4 py-3 text-right text-indigo-400 font-semibold" x-text="s.tokenCount"></td>
+                <td class="px-4 py-3 text-right text-zinc-500 text-xs" x-text="fmtDate(s.createdAt)"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- API Keys -->
+    <div x-show="page === 'apikeys'">
+      <div class="flex items-center justify-between mb-5">
+        <h2 class="text-lg font-semibold text-white">API Keys</h2>
+        <button @click="showCreateKey = true" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition">+ Nouvelle clé</button>
+      </div>
+
+      <!-- New key result -->
+      <div x-show="newKeyResult" x-cloak class="bg-green-900/20 border border-green-800 rounded-xl p-4 mb-4 flex items-start gap-3">
+        <span class="text-green-400 text-lg">✓</span>
+        <div>
+          <p class="text-sm text-green-300 font-medium mb-1">Clé créée — sauvegarde-la, elle ne sera plus affichée.</p>
+          <code class="text-xs text-green-400 font-mono break-all" x-text="newKeyResult"></code>
+        </div>
+        <button @click="newKeyResult = null" class="ml-auto text-zinc-500 hover:text-white">✕</button>
+      </div>
+
+      <!-- Create form -->
+      <div x-show="showCreateKey" x-cloak class="bg-[#111] border border-[#1e1e1e] rounded-xl p-5 mb-4">
+        <h3 class="text-sm font-semibold text-zinc-300 mb-4">Nouvelle clé</h3>
+        <div class="flex gap-3">
+          <input x-model="newKeyName" placeholder="Nom (ex: claude-agent)" class="flex-1 bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500" />
+          <select x-model="newKeyRole" class="bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500">
+            <option value="SENDER">SENDER</option>
+            <option value="VIEWER">VIEWER</option>
+            <option value="ADMIN">ADMIN</option>
+          </select>
+          <button @click="createKey()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition">Créer</button>
+          <button @click="showCreateKey = false" class="text-zinc-500 hover:text-white text-sm px-2">Annuler</button>
+        </div>
+      </div>
+
+      <div class="bg-[#111] border border-[#1e1e1e] rounded-xl overflow-hidden">
+        <div x-show="apiKeys.length === 0" class="p-6 text-zinc-600 text-sm">Aucune clé.</div>
+        <table class="w-full text-sm" x-show="apiKeys.length > 0">
+          <thead class="bg-[#161616]">
+            <tr class="text-xs text-zinc-500">
+              <th class="text-left px-4 py-3 font-medium">Nom</th>
+              <th class="text-left px-4 py-3 font-medium">Rôle</th>
+              <th class="text-left px-4 py-3 font-medium">Statut</th>
+              <th class="text-right px-4 py-3 font-medium">Dernière utilisation</th>
+              <th class="px-4 py-3"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="k in apiKeys" :key="k.id">
+              <tr class="border-t border-[#161616] hover:bg-[#161616]">
+                <td class="px-4 py-3 text-zinc-200" x-text="k.name"></td>
+                <td class="px-4 py-3"><span :class="roleClass(k.role)" class="text-xs px-2 py-0.5 rounded-full font-medium" x-text="k.role"></span></td>
+                <td class="px-4 py-3"><span :class="k.active ? 'text-green-400' : 'text-zinc-600'" class="text-xs" x-text="k.active ? '● Actif' : '○ Révoqué'"></span></td>
+                <td class="px-4 py-3 text-right text-zinc-500 text-xs" x-text="k.lastUsed ? fmtDate(k.lastUsed) : '—'"></td>
+                <td class="px-4 py-3 text-right">
+                  <button x-show="k.active" @click="revokeKey(k.id)" class="text-xs text-red-500 hover:text-red-400 transition">Révoquer</button>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- Campaign modal -->
+<div x-show="campaignDetail" x-cloak @click.self="campaignDetail = null"
+  class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+  <div class="bg-[#111] border border-[#222] rounded-2xl p-6 w-full max-w-lg max-h-[80vh] overflow-y-auto" @click.stop>
+    <div class="flex items-start justify-between mb-5">
+      <div>
+        <h3 class="text-base font-semibold text-white" x-text="campaignDetail?.campaign?.title"></h3>
+        <p class="text-xs text-zinc-500 mt-0.5" x-text="campaignDetail?.campaign?.id"></p>
+      </div>
+      <button @click="campaignDetail = null" class="text-zinc-500 hover:text-white ml-4">✕</button>
+    </div>
+
+    <!-- Stats grid -->
+    <div class="grid grid-cols-2 gap-3 mb-5">
+      <template x-for="s in campaignStats" :key="s.label">
+        <div class="bg-[#0a0a0a] rounded-xl p-3">
+          <p class="text-xs text-zinc-500" x-text="s.label"></p>
+          <p class="text-xl font-bold mt-0.5" :class="s.color" x-text="s.value"></p>
+        </div>
+      </template>
+    </div>
+
+    <!-- Chart -->
+    <canvas id="deliveryChart" height="160"></canvas>
+
+    <!-- By platform -->
+    <div x-show="campaignDetail?.byPlatform && Object.keys(campaignDetail.byPlatform).length > 0" class="mt-4">
+      <p class="text-xs text-zinc-500 mb-2">Par plateforme</p>
+      <div class="flex gap-3">
+        <template x-for="[platform, stats] in Object.entries(campaignDetail?.byPlatform ?? {})" :key="platform">
+          <div class="bg-[#0a0a0a] rounded-lg p-3 flex-1">
+            <p class="text-xs font-medium text-zinc-400 mb-1" x-text="platform"></p>
+            <template x-for="[status, count] in Object.entries(stats)" :key="status">
+              <p class="text-xs text-zinc-600"><span class="text-zinc-400" x-text="status"></span> <span x-text="count"></span></p>
+            </template>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function app() {
+  return {
+    authed: false,
+    loading: false,
+    authError: '',
+    apiUrl: 'http://localhost:3000',
+    apiKey: '',
+    page: 'overview',
+    nav: [
+      { id: 'overview',  icon: '◈', label: 'Vue d\'ensemble' },
+      { id: 'campaigns', icon: '📣', label: 'Campagnes' },
+      { id: 'segments',  icon: '⬡', label: 'Segments' },
+      { id: 'apikeys',   icon: '🔑', label: 'API Keys' },
+    ],
+    overview: {},
+    campaigns: [],
+    segments: [],
+    apiKeys: [],
+    campaignDetail: null,
+    showCreateKey: false,
+    newKeyName: '',
+    newKeyRole: 'SENDER',
+    newKeyResult: null,
+    kpis: [],
+
+    async api(path, opts = {}) {
+      const res = await fetch(`${this.apiUrl}/api${path}`, {
+        ...opts,
+        headers: { 'x-api-key': this.apiKey, 'Content-Type': 'application/json', ...(opts.headers ?? {}) },
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      return res.json()
+    },
+
+    async login() {
+      this.loading = true; this.authError = ''
+      try {
+        await this.api('/admin/dashboard/overview')
+        this.authed = true
+        await this.loadPage('overview')
+      } catch {
+        this.authError = 'Clé invalide ou serveur inaccessible.'
+      } finally { this.loading = false }
+    },
+
+    async init() {
+      const saved = localStorage.getItem('pi_key')
+      const savedUrl = localStorage.getItem('pi_url')
+      if (saved) { this.apiKey = saved; this.apiUrl = savedUrl || this.apiUrl }
+    },
+
+    async loadPage(p) {
+      this.page = p
+      if (p === 'overview') await this.loadOverview()
+      if (p === 'campaigns') await this.loadCampaigns()
+      if (p === 'segments') await this.loadSegments()
+      if (p === 'apikeys') await this.loadApiKeys()
+      localStorage.setItem('pi_key', this.apiKey)
+      localStorage.setItem('pi_url', this.apiUrl)
+    },
+
+    async loadOverview() {
+      this.overview = await this.api('/admin/dashboard/overview')
+      this.kpis = [
+        { label: 'Tokens actifs', value: this.overview.tokens ?? 0, sub: 'appareils enregistrés', sub_color: 'text-indigo-400' },
+        { label: 'Campagnes', value: this.overview.campaigns ?? 0, sub: 'total', sub_color: 'text-zinc-500' },
+        { label: 'Delivery rate', value: `${this.overview.deliveryRate ?? 0}%`, sub: 'global', sub_color: this.overview.deliveryRate > 80 ? 'text-green-400' : 'text-yellow-400' },
+        { label: 'Notifications', value: this.overview.totalSent ?? 0, sub: 'envoyées', sub_color: 'text-zinc-500' },
+      ]
+    },
+
+    async loadCampaigns() {
+      const d = await this.api('/admin/dashboard/campaigns')
+      this.campaigns = d.campaigns
+    },
+
+    async loadSegments() {
+      const d = await this.api('/admin/segments/')
+      this.segments = d.segments
+    },
+
+    async loadApiKeys() {
+      const d = await this.api('/admin/dashboard/apikeys')
+      this.apiKeys = d.keys
+    },
+
+    async openCampaign(id) {
+      this.campaignDetail = await this.api(`/admin/dashboard/campaigns/${id}`)
+      this.$nextTick(() => this.renderChart())
+    },
+
+    renderChart() {
+      const ctx = document.getElementById('deliveryChart')
+      if (!ctx || !this.campaignDetail?.byStatus) return
+      const existing = Chart.getChart(ctx)
+      if (existing) existing.destroy()
+      const s = this.campaignDetail.byStatus
+      new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: ['Envoyé', 'Livré', 'Échoué', 'Ouvert'],
+          datasets: [{ data: [s.SENT||0, s.DELIVERED||0, s.FAILED||0, s.OPENED||0], backgroundColor: ['#6366f1','#22c55e','#ef4444','#f59e0b'], borderWidth: 0 }],
+        },
+        options: { plugins: { legend: { labels: { color: '#888', font: { size: 11 } } } } },
+      })
+    },
+
+    get campaignStats() {
+      if (!this.campaignDetail) return []
+      const s = this.campaignDetail.byStatus ?? {}
+      const sent = (s.SENT||0)+(s.DELIVERED||0)+(s.OPENED||0)
+      const delivered = (s.DELIVERED||0)+(s.OPENED||0)
+      return [
+        { label: 'Envoyées', value: sent, color: 'text-indigo-400' },
+        { label: 'Livrées', value: delivered, color: 'text-green-400' },
+        { label: 'Échouées', value: s.FAILED||0, color: 'text-red-400' },
+        { label: 'Ouvertes', value: s.OPENED||0, color: 'text-yellow-400' },
+      ]
+    },
+
+    async createKey() {
+      if (!this.newKeyName) return
+      const d = await this.api('/admin/tokens/apikeys', {
+        method: 'POST',
+        body: JSON.stringify({ name: this.newKeyName, role: this.newKeyRole }),
+      })
+      this.newKeyResult = d.key
+      this.showCreateKey = false
+      this.newKeyName = ''
+      await this.loadApiKeys()
+    },
+
+    async revokeKey(id) {
+      if (!confirm('Révoquer cette clé ?')) return
+      await this.api(`/admin/tokens/apikeys/${id}`, { method: 'DELETE' })
+      await this.loadApiKeys()
+    },
+
+    statusClass(s) {
+      return { DONE:'bg-green-900/40 text-green-400', SENDING:'bg-indigo-900/40 text-indigo-400', SCHEDULED:'bg-yellow-900/40 text-yellow-400', FAILED:'bg-red-900/40 text-red-400', DRAFT:'bg-zinc-800 text-zinc-400' }[s] ?? 'bg-zinc-800 text-zinc-400'
+    },
+    roleClass(r) {
+      return { ADMIN:'bg-purple-900/40 text-purple-400', SENDER:'bg-indigo-900/40 text-indigo-400', VIEWER:'bg-zinc-800 text-zinc-400' }[r] ?? 'bg-zinc-800 text-zinc-400'
+    },
+    fmtDate(d) {
+      return new Date(d).toLocaleDateString('fr-FR', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })
+    },
+  }
+}
+</script>
+</body>
+</html>

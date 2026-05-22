@@ -2,6 +2,7 @@ import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
+import path from 'path'
 import { buildContainer } from './container/ioc'
 import { createRouter } from './api/router'
 import { registerTools } from './mcp/tools/index'
@@ -16,11 +17,30 @@ async function main(): Promise<void> {
   logger.info('Database connected')
 
   const app = express()
-  app.use(helmet())
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: [
+            "'self'",
+            "'unsafe-inline'",
+            "'unsafe-eval'",
+            'https://cdn.tailwindcss.com',
+            'https://cdn.jsdelivr.net',
+          ],
+          styleSrc: ["'self'", "'unsafe-inline'", 'https://cdn.tailwindcss.com'],
+          connectSrc: ["'self'", 'http://localhost:3000'],
+          imgSrc: ["'self'", 'data:'],
+        },
+      },
+    }),
+  )
   app.use(cors())
   app.use(express.json())
 
   app.use('/api', createRouter(container))
+  app.use('/dashboard', express.static(path.join(__dirname, '..', 'dashboard')))
 
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok', version: '1.0.0' })
