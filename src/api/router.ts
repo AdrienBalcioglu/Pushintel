@@ -15,7 +15,7 @@ export function createRouter(container: Container): Router {
     container.blacklistService,
   )
 
-  router.use('/sdk', authMiddleware, mcpRateLimiter, createRegisterRouter(container.tokenService))
+  router.use('/sdk', authMiddleware, mcpRateLimiter, createRegisterRouter(container.tokenService, container.pushService))
 
   router.use(
     '/admin/tokens',

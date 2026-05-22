@@ -17,7 +17,7 @@ const worker = new Worker<PushJobData>(
   PUSH_QUEUE_NAME,
   async (job) => {
     const { token, platform, notification, campaignId } = job.data
-    const gateway = factory.create(platform)
+    const gateway = factory.create(platform, token)
     const result = await gateway.send(token, notification)
 
     await prisma.deliveryEvent.create({

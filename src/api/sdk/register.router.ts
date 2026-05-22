@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import type { TokenService } from '../../tokens/token.service'
+import type { PushService } from '../../push/push.service'
 import type { Platform } from '@prisma/client'
 
 const registerSchema = z.object({
@@ -10,8 +11,38 @@ const registerSchema = z.object({
   tags: z.array(z.string()).optional(),
 })
 
-export function createRegisterRouter(tokenService: TokenService): Router {
+const sendSchema = z.object({
+  title: z.string().min(1),
+  body: z.string().min(1),
+  segment: z.string().default('all'),
+  data: z.record(z.string(), z.string()).optional(),
+})
+
+export function createRegisterRouter(tokenService: TokenService, pushService: PushService): Router {
   const router = Router()
+
+  router.post('/send', async (req, res) => {
+    try {
+      const body = sendSchema.parse(req.body)
+      const result = await pushService.sendToSegment(body.segment, {
+        title: body.title,
+        body: body.body,
+        data: body.data,
+      })
+      res.json({
+        campaignId: result.campaignId,
+        queued: result.queued,
+        estimatedDelivery: new Date(Date.now() + 5000).toISOString(),
+      })
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        res.status(400).json({ error: 'Validation failed', code: 'INVALID_INPUT', details: err.issues })
+        return
+      }
+      const msg = err instanceof Error ? err.message : 'Internal error'
+      res.status(500).json({ error: msg, code: 'INTERNAL_ERROR' })
+    }
+  })
 
   router.post('/register', async (req, res) => {
     try {

@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pushintel — Test Client</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #0f0f0f; color: #e0e0e0; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 40px 20px; }
+    h1 { font-size: 1.6rem; margin-bottom: 4px; color: #fff; }
+    .subtitle { font-size: 0.85rem; color: #666; margin-bottom: 40px; }
+    .card { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 12px; padding: 24px; width: 100%; max-width: 560px; margin-bottom: 16px; }
+    .card h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color: #555; margin-bottom: 16px; }
+    label { display: block; font-size: 0.8rem; color: #888; margin-bottom: 6px; margin-top: 14px; }
+    input, textarea { width: 100%; background: #111; border: 1px solid #2a2a2a; border-radius: 8px; color: #e0e0e0; padding: 10px 12px; font-size: 0.875rem; font-family: monospace; }
+    textarea { resize: vertical; min-height: 60px; }
+    button { margin-top: 16px; width: 100%; padding: 12px; border: none; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: opacity 0.15s; }
+    button:hover { opacity: 0.85; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-primary { background: #6366f1; color: #fff; }
+    .btn-send { background: #22c55e; color: #fff; }
+    .log { background: #111; border: 1px solid #2a2a2a; border-radius: 8px; padding: 14px; font-family: monospace; font-size: 0.78rem; min-height: 80px; max-height: 200px; overflow-y: auto; line-height: 1.7; }
+    .log .ok { color: #22c55e; }
+    .log .err { color: #f87171; }
+    .log .info { color: #60a5fa; }
+    .token-box { word-break: break-all; font-size: 0.7rem; color: #a78bfa; }
+    .badge { display: inline-block; background: #2a2a2a; color: #888; font-size: 0.72rem; padding: 2px 8px; border-radius: 999px; margin-left: 8px; }
+    #status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #555; margin-right: 6px; }
+    #status-dot.connected { background: #22c55e; }
+  </style>
+</head>
+<body>
+  <h1>🔔 Pushintel</h1>
+  <p class="subtitle">Test client — Web Push</p>
+
+  <!-- Step 1: Register -->
+  <div class="card">
+    <h2>1 — Enregistrer ce navigateur</h2>
+    <label>Pushintel API URL</label>
+    <input id="api-url" value="http://localhost:3000" />
+    <label>API Key (x-api-key)</label>
+    <input id="api-key" type="password" placeholder="pi_..." />
+    <label>User ID (libre)</label>
+    <input id="user-id" value="test-user-1" />
+    <button class="btn-primary" id="btn-register">Demander la permission &amp; s'enregistrer</button>
+    <label style="margin-top:16px">FCM Token</label>
+    <div class="log token-box" id="token-display">En attente...</div>
+  </div>
+
+  <!-- Step 2: Send push -->
+  <div class="card">
+    <h2>2 — Envoyer une notification</h2>
+    <label>Titre</label>
+    <input id="notif-title" value="Bonjour depuis Pushintel 👋" />
+    <label>Corps</label>
+    <input id="notif-body" value="Ça marche !" />
+    <label>Segment</label>
+    <input id="notif-segment" value="all" />
+    <button class="btn-send" id="btn-send" disabled>Envoyer via MCP tool send_push</button>
+  </div>
+
+  <!-- Log -->
+  <div class="card">
+    <h2>Console <span id="status-dot"></span><span id="status-text" class="badge">déconnecté</span></h2>
+    <div class="log" id="log">Prêt.</div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js'
+    import { getMessaging, getToken, onMessage } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js'
+
+    // ⚠️  Remplacer par votre VAPID key (Firebase Console > Project Settings > Cloud Messaging > Web configuration)
+    const VAPID_KEY = 'BANy_CbqCF38KcLrmowkjkJmWlzww-BeO95P3JVadhyWOUGPXuwU_n27Y-RYmNWmB9vZMqvgfzDepTImqeIOrlo'
+
+    const firebaseConfig = {
+      apiKey: 'AIzaSyBJ3ESip_gifEPUFZUdbam0QgR4j4lqfas',
+      authDomain: 'pushintel-a5fc8.firebaseapp.com',
+      projectId: 'pushintel-a5fc8',
+      storageBucket: 'pushintel-a5fc8.firebasestorage.app',
+      messagingSenderId: '60021983181',
+      appId: '1:60021983181:web:d70d64e270685d990d2684',
+    }
+
+    const app = initializeApp(firebaseConfig)
+    const messaging = getMessaging(app)
+
+    const log = (msg, type = 'info') => {
+      const el = document.getElementById('log')
+      const line = document.createElement('div')
+      line.className = type
+      line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`
+      el.appendChild(line)
+      el.scrollTop = el.scrollHeight
+    }
+
+    let fcmToken = null
+
+    document.getElementById('btn-register').addEventListener('click', async () => {
+      try {
+        log('Demande de permission notifications...')
+        const permission = await Notification.requestPermission()
+        if (permission !== 'granted') { log('Permission refusée', 'err'); return }
+        log('Permission accordée', 'ok')
+
+        // Nettoyer les anciens service workers pour éviter les conflits
+        const existing = await navigator.serviceWorker.getRegistrations()
+        for (const reg of existing) { await reg.unregister() }
+        log(`${existing.length} ancien(s) SW supprimé(s)`)
+
+        await navigator.serviceWorker.register('/firebase-messaging-sw.js')
+        log('Service worker enregistré, attente activation...')
+        const activeReg = await navigator.serviceWorker.ready
+        log('Service worker actif', 'ok')
+
+        // Test push souscription brute pour diagnostiquer
+        try {
+          const sub = await activeReg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: VAPID_KEY
+          })
+          log(`PushManager.subscribe OK: ${sub.endpoint.substring(0, 60)}...`, 'ok')
+          sub.unsubscribe()
+        } catch (rawErr) {
+          log(`PushManager erreur brute — name:${rawErr.name} code:${rawErr.code ?? 'n/a'} msg:${rawErr.message}`, 'err')
+        }
+
+        fcmToken = await getToken(messaging, { vapidKey: VAPID_KEY, serviceWorkerRegistration: activeReg })
+          .catch((e) => {
+            log(`getToken erreur — code:${e.code ?? 'n/a'} msg:${e.message}`, 'err')
+            throw e
+          })
+        log(`Token FCM obtenu`, 'ok')
+        document.getElementById('token-display').textContent = fcmToken
+
+        const apiUrl = document.getElementById('api-url').value
+        const apiKey = document.getElementById('api-key').value
+        const userId = document.getElementById('user-id').value
+
+        log('Enregistrement sur Pushintel...')
+        const res = await fetch(`${apiUrl}/api/sdk/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+          body: JSON.stringify({ userId, token: fcmToken, platform: 'WEB', tags: ['test', 'web'] }),
+        })
+
+        if (!res.ok) {
+          const err = await res.json()
+          log(`Erreur enregistrement: ${JSON.stringify(err)}`, 'err')
+          return
+        }
+
+        const data = await res.json()
+        log(`Enregistré sur Pushintel — device id: ${data.id}`, 'ok')
+        document.getElementById('btn-send').disabled = false
+        document.getElementById('status-dot').className = 'connected'
+        document.getElementById('status-text').textContent = 'connecté'
+      } catch (e) {
+        log(`Erreur: ${e.message}`, 'err')
+      }
+    })
+
+    document.getElementById('btn-send').addEventListener('click', async () => {
+      const apiUrl = document.getElementById('api-url').value
+      const apiKey = document.getElementById('api-key').value
+      const title = document.getElementById('notif-title').value
+      const body = document.getElementById('notif-body').value
+      const segment = document.getElementById('notif-segment').value
+
+      try {
+        log(`Envoi push → segment "${segment}"...`)
+        const res = await fetch(`${apiUrl}/api/sdk/send`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+          body: JSON.stringify({ title, body, segment }),
+        })
+        const data = await res.json()
+        if (!res.ok) { log(`Erreur: ${JSON.stringify(data)}`, 'err'); return }
+        log(`Push envoyé — campaignId: ${data.campaignId}, ${data.queued} token(s) en queue`, 'ok')
+      } catch (e) {
+        log(`Erreur: ${e.message}`, 'err')
+      }
+    })
+
+    onMessage(messaging, (payload) => {
+      log(`🔔 Notification reçue (foreground): ${payload.notification?.title} — ${payload.notification?.body}`, 'ok')
+    })
+  </script>
+</body>
+</html>
