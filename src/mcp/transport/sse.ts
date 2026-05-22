@@ -1,13 +1,15 @@
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js'
 import type { Router } from 'express'
-import type { Server as McServer } from '@modelcontextprotocol/sdk/server/index.js'
 import type { Logger } from 'pino'
+import type { PushintelMCPServer } from '../server'
 
-export function mountSseTransport(router: Router, mcpServer: McServer, logger: Logger): void {
+export function mountSseTransport(router: Router, mcpServer: PushintelMCPServer, logger: Logger): void {
   const transports = new Map<string, SSEServerTransport>()
 
   router.get('/sse', async (_req, res) => {
     const transport = new SSEServerTransport('/mcp/messages', res)
+    const server = mcpServer.createInstance()
+
     transports.set(transport.sessionId, transport)
     logger.info({ sessionId: transport.sessionId }, 'SSE client connected')
 
@@ -16,7 +18,7 @@ export function mountSseTransport(router: Router, mcpServer: McServer, logger: L
       logger.info({ sessionId: transport.sessionId }, 'SSE client disconnected')
     })
 
-    await mcpServer.connect(transport)
+    await server.connect(transport)
   })
 
   router.post('/messages', async (req, res) => {
