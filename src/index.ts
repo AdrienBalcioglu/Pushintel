@@ -5,8 +5,7 @@ import helmet from 'helmet'
 import path from 'path'
 import { buildContainer } from './container/ioc'
 import { createRouter } from './api/router'
-import { registerTools } from './mcp/tools/index'
-import { PushintelMCPServer } from './mcp/server'
+import { createMcpRouter } from './mcp/mcp.router'
 import { config } from './config/env'
 
 async function main(): Promise<void> {
@@ -40,22 +39,19 @@ async function main(): Promise<void> {
   app.use(express.json())
 
   app.use('/api', createRouter(container))
+  app.use('/mcp', createMcpRouter(container, logger))
   app.use('/dashboard', express.static(path.join(__dirname, '..', 'dashboard')))
 
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok', version: '1.0.0' })
   })
 
-  const tools = registerTools(
-    container.pushService,
-    container.segmentService,
-    container.analyticsService,
-  )
-
-  const mcpServer = new PushintelMCPServer(tools, logger)
-
   if (config.NODE_ENV !== 'production') {
-    await mcpServer.connectStdio()
+    // stdio kept for local Claude Desktop integration
+    const { registerTools } = await import('./mcp/tools/index')
+    const { PushintelMCPServer } = await import('./mcp/server')
+    const tools = registerTools(container.pushService, container.segmentService, container.analyticsService)
+    await new PushintelMCPServer(tools, logger).connectStdio()
   }
 
   app.listen(config.PORT, () => {

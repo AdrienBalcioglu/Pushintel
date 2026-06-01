@@ -7,6 +7,5 @@ certs/
 *.pem
 .DS_Store
 coverage/
-prisma/migrations/
 dump.rdb
 expo-test-app/node_modules/
