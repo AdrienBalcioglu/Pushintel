@@ -12,9 +12,6 @@ async function main(): Promise<void> {
   const container = buildContainer()
   const { logger, prisma } = container
 
-  await prisma.$connect()
-  logger.info('Database connected')
-
   const app = express()
   app.use(
     helmet({
@@ -42,8 +39,14 @@ async function main(): Promise<void> {
   app.use('/mcp', createMcpRouter(container, logger))
   app.use('/dashboard', express.static(path.join(__dirname, '..', 'dashboard')))
 
+  let dbConnected = false
+
   app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', version: '1.0.0' })
+    res.json({
+      status: 'ok',
+      version: '1.0.0',
+      db: dbConnected ? 'connected' : 'pending',
+    })
   })
 
   // Global error handler — catches unhandled errors in routes
@@ -54,17 +57,35 @@ async function main(): Promise<void> {
     }
   })
 
-  if (config.NODE_ENV !== 'production') {
-    // stdio kept for local Claude Desktop integration
-    const { registerTools } = await import('./mcp/tools/index')
-    const { PushintelMCPServer } = await import('./mcp/server')
-    const tools = registerTools(container.pushService, container.segmentService, container.analyticsService)
-    await new PushintelMCPServer(tools, logger).connectStdio()
-  }
-
+  // Start HTTP server FIRST so healthcheck can respond
   const server = app.listen(config.PORT, () => {
     logger.info({ port: config.PORT }, 'Pushintel server started')
   })
+
+  // Connect DB in background (non-blocking)
+  prisma.$connect()
+    .then(() => {
+      dbConnected = true
+      logger.info('Database connected')
+    })
+    .catch((err) => {
+      logger.error({ err }, 'Database connection failed — retrying in background')
+      // Retry after 5s
+      setTimeout(() => {
+        prisma.$connect()
+          .then(() => { dbConnected = true; logger.info('Database connected (retry)') })
+          .catch((e) => logger.error({ err: e }, 'Database retry failed'))
+      }, 5000)
+    })
+
+  // MCP stdio in non-production
+  if (config.NODE_ENV !== 'production') {
+    const { registerTools } = await import('./mcp/tools/index')
+    const { PushintelMCPServer } = await import('./mcp/server')
+    const tools = registerTools(container.pushService, container.segmentService, container.analyticsService)
+    new PushintelMCPServer(tools, logger).connectStdio()
+      .catch((err) => logger.error({ err }, 'MCP stdio connection failed'))
+  }
 
   let shuttingDown = false
 
@@ -74,9 +95,6 @@ async function main(): Promise<void> {
     logger.info('Shutting down...')
 
     server.close()
-
-    // Gracefully close BullMQ workers if this process started them
-    // (workers run in separate processes, but we clean up redis anyway)
     await container.shutdown()
 
     process.exit(0)
