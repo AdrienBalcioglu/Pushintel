@@ -41,6 +41,10 @@ async function main(): Promise<void> {
 
   let dbConnected = false
 
+  app.get('/', (_req, res) => {
+    res.redirect('/dashboard')
+  })
+
   app.get('/health', (_req, res) => {
     res.json({
       status: 'ok',
