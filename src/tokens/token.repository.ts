@@ -1,4 +1,4 @@
-import type { PrismaClient, Platform } from '@prisma/client'
+import type { PrismaClient, Platform, Prisma } from '@prisma/client'
 
 export interface RegisterTokenInput {
   userId: string
@@ -24,23 +24,22 @@ export class TokenRepository {
 
   async findByFilters(filters: { platform?: Platform; tags?: string[]; userIds?: string[] }) {
     return this.prisma.deviceToken.findMany({
-      where: {
-        active: true,
-        ...(filters.platform && { platform: filters.platform }),
-        ...(filters.tags?.length && { tags: { hasSome: filters.tags } }),
-        ...(filters.userIds?.length && { userId: { in: filters.userIds } }),
-      },
+      where: this.buildWhereClause(filters),
     })
   }
 
-  async countByFilters(filters: { platform?: Platform; tags?: string[]; userIds?: string[] }) {
+  async countByFilters(filters: { platform?: Platform; tags?: string[]; userIds?: string[] }): Promise<number> {
     return this.prisma.deviceToken.count({
-      where: {
-        active: true,
-        ...(filters.platform && { platform: filters.platform }),
-        ...(filters.tags?.length && { tags: { hasSome: filters.tags } }),
-        ...(filters.userIds?.length && { userId: { in: filters.userIds } }),
-      },
+      where: this.buildWhereClause(filters),
     })
+  }
+
+  private buildWhereClause(filters: { platform?: Platform; tags?: string[]; userIds?: string[] }): Prisma.DeviceTokenWhereInput {
+    return {
+      active: true,
+      ...(filters.platform && { platform: filters.platform }),
+      ...(filters.tags?.length && { tags: { hasSome: filters.tags } }),
+      ...(filters.userIds?.length && { userId: { in: filters.userIds } }),
+    }
   }
 }

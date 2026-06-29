@@ -1,5 +1,5 @@
 import 'dotenv/config'
-import express from 'express'
+import express, { type Request, type Response, type NextFunction } from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
 import path from 'path'
@@ -46,6 +46,14 @@ async function main(): Promise<void> {
     res.json({ status: 'ok', version: '1.0.0' })
   })
 
+  // Global error handler — catches unhandled errors in routes
+  app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+    logger.error({ err }, 'Unhandled request error')
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Internal server error', code: 'INTERNAL_ERROR' })
+    }
+  })
+
   if (config.NODE_ENV !== 'production') {
     // stdio kept for local Claude Desktop integration
     const { registerTools } = await import('./mcp/tools/index')
@@ -54,14 +62,23 @@ async function main(): Promise<void> {
     await new PushintelMCPServer(tools, logger).connectStdio()
   }
 
-  app.listen(config.PORT, () => {
+  const server = app.listen(config.PORT, () => {
     logger.info({ port: config.PORT }, 'Pushintel server started')
   })
 
+  let shuttingDown = false
+
   const shutdown = async (): Promise<void> => {
+    if (shuttingDown) return
+    shuttingDown = true
     logger.info('Shutting down...')
-    await prisma.$disconnect()
-    container.redis.disconnect()
+
+    server.close()
+
+    // Gracefully close BullMQ workers if this process started them
+    // (workers run in separate processes, but we clean up redis anyway)
+    await container.shutdown()
+
     process.exit(0)
   }
 

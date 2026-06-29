@@ -5,3 +5,12 @@ export interface SegmentFilters {
   tags?: string[]
   userIds?: string[]
 }
+
+/** Value returned by segment service operations */
+export interface SegmentWithCount {
+  id: string
+  name: string
+  filters: SegmentFilters
+  createdAt: Date
+  tokenCount: number
+}

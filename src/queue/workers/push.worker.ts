@@ -1,23 +1,16 @@
+import 'dotenv/config'
 import { Worker } from 'bullmq'
-import { PrismaClient } from '@prisma/client'
-import pino from 'pino'
 import { redisConnection, PUSH_QUEUE_NAME } from '../bull.config'
-import { GatewayFactory } from '../../push/gateway/gateway.factory'
-import { FCMGateway } from '../../push/gateway/fcm.gateway'
-import { APNsGateway } from '../../push/gateway/apns.gateway'
+import { buildWorkerContainer, disposeInfrastructure } from '../../container/ioc'
 import type { PushJobData } from '../push.queue'
-import { initFirebase } from '../../container/firebase'
 
-const logger = pino({ name: 'push-worker' })
-const prisma = new PrismaClient()
-const firebaseApp = initFirebase()
-const factory = new GatewayFactory(new FCMGateway(firebaseApp), new APNsGateway(), logger)
+const { logger, prisma, gatewayFactory } = buildWorkerContainer('push-worker')
 
 const worker = new Worker<PushJobData>(
   PUSH_QUEUE_NAME,
   async (job) => {
     const { token, platform, notification, campaignId } = job.data
-    const gateway = factory.create(platform, token)
+    const gateway = gatewayFactory.create(platform, token)
     const result = await gateway.send(token, notification)
 
     await prisma.deliveryEvent.create({
@@ -52,5 +45,15 @@ worker.on('failed', (job, err) => {
 worker.on('error', (err) => {
   logger.error({ err }, 'worker error')
 })
+
+async function shutdown(): Promise<void> {
+  logger.info('Push worker shutting down...')
+  await worker.close()
+  await disposeInfrastructure()
+  process.exit(0)
+}
+
+process.on('SIGTERM', shutdown)
+process.on('SIGINT', shutdown)
 
 logger.info('Push worker started')

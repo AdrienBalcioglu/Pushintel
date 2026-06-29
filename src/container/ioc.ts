@@ -32,25 +32,36 @@ export interface Container {
   apikeyService: ApiKeyService
   jwtService: JwtService
   discord: DiscordWebhook | null
+  shutdown: () => Promise<void>
 }
 
-export function buildContainer(): Container {
-  const logger: Logger = pino({
-    name: 'pushintel',
-    level: config.NODE_ENV === 'production' ? 'info' : 'debug',
-    ...(config.NODE_ENV !== 'production' && {
-      transport: { target: 'pino-pretty' },
-    }),
-  })
+// Shared infrastructure singletons (lazy-initialized)
+let _prisma: PrismaClient | null = null
+let _redis: IORedis | null = null
+let _firebaseApp: ReturnType<typeof initFirebase> | undefined = undefined
 
-  const prisma = new PrismaClient()
-  const redis = new IORedis(config.REDIS_URL, { maxRetriesPerRequest: null })
+function getPrisma(): PrismaClient {
+  if (!_prisma) _prisma = new PrismaClient()
+  return _prisma
+}
 
-  const firebaseApp = initFirebase()
-  const fcmGateway = new FCMGateway(firebaseApp)
+function getRedis(): IORedis {
+  if (!_redis) _redis = new IORedis(config.REDIS_URL, { maxRetriesPerRequest: null })
+  return _redis
+}
+
+function getFirebaseApp() {
+  if (_firebaseApp === undefined) _firebaseApp = initFirebase()
+  return _firebaseApp
+}
+
+function buildGatewayFactory(logger: Logger): GatewayFactory {
+  const fcmGateway = new FCMGateway(getFirebaseApp())
   const apnsGateway = new APNsGateway()
-  const gatewayFactory = new GatewayFactory(fcmGateway, apnsGateway, logger)
+  return new GatewayFactory(fcmGateway, apnsGateway, logger)
+}
 
+function buildServices(prisma: PrismaClient, _logger: Logger) {
   const tokenRepo = new TokenRepository(prisma)
   const tokenService = new TokenService(tokenRepo)
 
@@ -62,11 +73,37 @@ export function buildContainer(): Container {
 
   const pushService = new PushService(prisma, pushQueue, segmentService)
 
+  return { tokenService, segmentService, analyticsService, pushService }
+}
+
+export function buildContainer(): Container {
+  const logger: Logger = pino({
+    name: 'pushintel',
+    level: config.NODE_ENV === 'production' ? 'info' : 'debug',
+    ...(config.NODE_ENV !== 'production' && {
+      transport: { target: 'pino-pretty' },
+    }),
+  })
+
+  const prisma = getPrisma()
+  const redis = getRedis()
+  const gatewayFactory = buildGatewayFactory(logger)
+  const { tokenService, segmentService, analyticsService, pushService } = buildServices(prisma, logger)
+
   const blacklistService = new BlacklistService(redis)
   const apikeyService = new ApiKeyService(prisma)
   const jwtService = new JwtService()
 
   const discord = config.DISCORD_WEBHOOK_URL ? new DiscordWebhook(config.DISCORD_WEBHOOK_URL) : null
+
+  const shutdown = async (): Promise<void> => {
+    logger.info('Shutting down container...')
+    await prisma.$disconnect()
+    redis.disconnect()
+    _prisma = null
+    _redis = null
+    logger.info('Container shut down')
+  }
 
   return {
     logger,
@@ -81,5 +118,28 @@ export function buildContainer(): Container {
     apikeyService,
     jwtService,
     discord,
+    shutdown,
   }
+}
+
+/** Lightweight container for BullMQ workers — reuses shared singletons */
+export interface WorkerContainer {
+  logger: Logger
+  prisma: PrismaClient
+  gatewayFactory: GatewayFactory
+}
+
+export function buildWorkerContainer(workerName: string): WorkerContainer {
+  const logger = pino({ name: workerName })
+  const prisma = getPrisma()
+  const gatewayFactory = buildGatewayFactory(logger)
+  return { logger, prisma, gatewayFactory }
+}
+
+/** Cleanup shared resources (called once on process exit) */
+export async function disposeInfrastructure(): Promise<void> {
+  if (_prisma) await _prisma.$disconnect()
+  if (_redis) _redis.disconnect()
+  _prisma = null
+  _redis = null
 }

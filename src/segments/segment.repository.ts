@@ -19,4 +19,21 @@ export class SegmentRepository {
   async findById(id: string) {
     return this.prisma.segment.findUnique({ where: { id } })
   }
+
+  /** Find temporary segments (A/B test) by prefix, older than a cutoff date */
+  async findTemporary(namePrefix: string, createdBefore: Date) {
+    return this.prisma.segment.findMany({
+      where: {
+        name: { startsWith: namePrefix },
+        createdAt: { lt: createdBefore },
+      },
+    })
+  }
+
+  async deleteMany(ids: string[]): Promise<number> {
+    const result = await this.prisma.segment.deleteMany({
+      where: { id: { in: ids } },
+    })
+    return result.count
+  }
 }

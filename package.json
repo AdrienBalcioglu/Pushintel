@@ -1,10 +1,22 @@
 {
   "name": "pushintel",
   "version": "1.0.0",
-  "description": "",
+  "description": "Multi-platform push notification service with MCP server for Claude Desktop integration",
+  "keywords": ["push-notifications", "apns", "fcm", "expo", "mcp", "bullmq", "analytics"],
+  "author": "Adrien Balcioglu",
+  "license": "ISC",
   "main": "dist/index.js",
+  "type": "commonjs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AdrienBalcioglu/Pushintel.git"
+  },
+  "bugs": {
+    "url": "https://github.com/AdrienBalcioglu/Pushintel/issues"
+  },
+  "homepage": "https://github.com/AdrienBalcioglu/Pushintel#readme",
   "scripts": {
-    "build": "prisma generate && tsup src/index.ts src/queue/workers/push.worker.ts src/queue/workers/analytics.worker.ts --format cjs --clean",
+    "build": "prisma generate && tsup src/index.ts src/queue/workers/push.worker.ts src/queue/workers/analytics.worker.ts --format cjs --clean --dts",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
     "test": "vitest run",
@@ -17,18 +29,6 @@
     "db:studio": "prisma studio",
     "bootstrap": "tsx scripts/bootstrap.ts"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/AdrienBalcioglu/Pushintel.git"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
-  "bugs": {
-    "url": "https://github.com/AdrienBalcioglu/Pushintel/issues"
-  },
-  "homepage": "https://github.com/AdrienBalcioglu/Pushintel#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@prisma/client": "^5.22.0",

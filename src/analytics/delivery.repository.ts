@@ -1,30 +1,68 @@
-import type { PrismaClient, DeliveryStatus, Platform } from '@prisma/client'
+import type { PrismaClient } from '@prisma/client'
+
+export interface PlatformStats {
+  sent: number
+  delivered: number
+}
+
+interface CampaignStats {
+  byStatus: {
+    SENT: number
+    DELIVERED: number
+    FAILED: number
+    OPENED: number
+  }
+  byPlatform: {
+    IOS: PlatformStats
+    ANDROID: PlatformStats
+    WEB: PlatformStats
+  }
+  total: number
+}
 
 export class DeliveryRepository {
   constructor(private prisma: PrismaClient) {}
 
-  async getStatsByCampaign(campaignId: string) {
-    const events = await this.prisma.deliveryEvent.findMany({ where: { campaignId } })
+  async getStatsByCampaign(campaignId: string): Promise<CampaignStats> {
+    // Single SQL aggregation via Prisma groupBy — O(1) rows, not O(n) in JS
+    const [statusAgg, platformAgg] = await Promise.all([
+      this.prisma.deliveryEvent.groupBy({
+        by: ['status'],
+        where: { campaignId },
+        _count: { status: true },
+      }),
+      this.prisma.deliveryEvent.groupBy({
+        by: ['platform', 'status'],
+        where: { campaignId },
+        _count: { status: true },
+      }),
+    ])
 
-    const byStatus: Record<DeliveryStatus, number> = {
-      SENT: 0,
-      DELIVERED: 0,
-      FAILED: 0,
-      OPENED: 0,
+    const byStatus = { SENT: 0, DELIVERED: 0, FAILED: 0, OPENED: 0 } as Record<string, number>
+    for (const row of statusAgg) {
+      byStatus[row.status] = row._count.status
     }
 
-    const byPlatform: Record<Platform, { sent: number; delivered: number }> = {
-      IOS: { sent: 0, delivered: 0 },
-      ANDROID: { sent: 0, delivered: 0 },
-      WEB: { sent: 0, delivered: 0 },
+    const byPlatform = {
+      IOS: { sent: 0, delivered: 0 } as PlatformStats,
+      ANDROID: { sent: 0, delivered: 0 } as PlatformStats,
+      WEB: { sent: 0, delivered: 0 } as PlatformStats,
+    }
+    for (const row of platformAgg) {
+      const platformStats = byPlatform[row.platform as keyof typeof byPlatform]
+      if (!platformStats) continue
+      if (row.status === 'SENT') platformStats.sent += row._count.status
+      if (row.status === 'DELIVERED' || row.status === 'OPENED') {
+        platformStats.delivered += row._count.status
+      }
     }
 
-    for (const e of events) {
-      byStatus[e.status]++
-      if (e.status === 'SENT') byPlatform[e.platform].sent++
-      if (e.status === 'DELIVERED') byPlatform[e.platform].delivered++
-    }
+    const total = Object.values(byStatus).reduce((sum, n) => sum + n, 0)
 
-    return { byStatus, byPlatform, total: events.length }
+    return {
+      byStatus: byStatus as CampaignStats['byStatus'],
+      byPlatform,
+      total,
+    }
   }
 }
