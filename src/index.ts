@@ -68,16 +68,35 @@ async function main(): Promise<void> {
 
   // Connect DB in background (non-blocking)
   prisma.$connect()
-    .then(() => {
+    .then(async () => {
       dbConnected = true
       logger.info('Database connected')
+
+      // Auto-bootstrap: create admin API key if none exists
+      const { default: bcrypt } = await import('bcrypt')
+      const crypto = await import('crypto')
+      const existing = await prisma.apiKey.findFirst({ where: { role: 'ADMIN', active: true } })
+      if (!existing) {
+        const raw = `pi_${crypto.randomBytes(32).toString('hex')}`
+        const keyHash = await bcrypt.hash(raw, 12)
+        await prisma.apiKey.create({
+          data: { name: 'auto-bootstrap-admin', keyHash, role: 'ADMIN' },
+        })
+        logger.info('========================================')
+        logger.info('  AUTO-BOOTSTRAP: Admin API key created')
+        logger.info(`  ${raw}`)
+        logger.info('  Save this key — it will not be shown again.')
+        logger.info('========================================')
+      }
     })
     .catch((err) => {
       logger.error({ err }, 'Database connection failed — retrying in background')
-      // Retry after 5s
       setTimeout(() => {
         prisma.$connect()
-          .then(() => { dbConnected = true; logger.info('Database connected (retry)') })
+          .then(async () => {
+            dbConnected = true
+            logger.info('Database connected (retry)')
+          })
           .catch((e) => logger.error({ err: e }, 'Database retry failed'))
       }, 5000)
     })
