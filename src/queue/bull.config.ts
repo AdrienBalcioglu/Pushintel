@@ -1,7 +1,7 @@
 import { ConnectionOptions } from 'bullmq'
 import { config } from '../config/env'
 
-const url = new URL(config.REDIS_URL)
+const url = new URL(config.REDIS_URL ?? 'redis://localhost:6379')
 
 export const redisConnection: ConnectionOptions = {
   host: url.hostname,

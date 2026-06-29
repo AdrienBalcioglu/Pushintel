@@ -8,7 +8,7 @@ let redisClient: IORedis | null = null
 
 function getRedisClient(): IORedis {
   if (!redisClient) {
-    redisClient = new IORedis(config.REDIS_URL, { maxRetriesPerRequest: null })
+    redisClient = new IORedis(config.REDIS_URL ?? 'redis://localhost:6379', { maxRetriesPerRequest: null })
   }
   return redisClient
 }

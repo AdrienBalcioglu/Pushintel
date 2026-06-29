@@ -46,7 +46,7 @@ function getPrisma(): PrismaClient {
 }
 
 function getRedis(): IORedis {
-  if (!_redis) _redis = new IORedis(config.REDIS_URL, { maxRetriesPerRequest: null })
+  if (!_redis) _redis = new IORedis(config.REDIS_URL ?? 'redis://localhost:6379', { maxRetriesPerRequest: null })
   return _redis
 }
 
